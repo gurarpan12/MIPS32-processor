@@ -1,90 +1,131 @@
-💻 32-bit Pipelined MIPS Processor in Verilog
+# 32-bit Pipelined MIPS Processor in Verilog
 
-📌 Overview
+## Overview
 
-This repository contains a full RTL (Register Transfer Level) Verilog implementation of a 32-bit MIPS microprocessor. It features a classic 5-stage pipeline architecture designed for high instruction throughput.
+This repository contains a Register Transfer Level (RTL) implementation of a **32-bit MIPS Processor** in Verilog. The processor follows the classic **5-stage pipelined architecture** to improve instruction throughput while maintaining modular and readable hardware design.
 
-Unlike basic sequential processors, this design implements advanced hardware-level hazard resolution—including a Forwarding Unit and a Hazard Detection Unit—allowing it to handle Read-After-Write (RAW) data dependencies and control hazards dynamically without relying on software-injected NOPs (bubbles).
+Unlike a basic single-cycle or sequential processor, this implementation includes dedicated hardware for resolving pipeline hazards. A **Forwarding Unit** and **Hazard Detection Unit** dynamically handle Read-After-Write (RAW) data dependencies and control hazards, minimizing pipeline stalls without relying on software-inserted NOP instructions.
 
-🏗️ Architecture & Datapath
+---
 
-The core is built upon the standard RISC 5-stage pipeline. Each stage is separated by synchronous pipeline registers (IF/ID, ID/EX, EX/MEM, MEM/WB) that latch data and control signals on the positive clock edge.
+## Architecture
 
-Instruction Fetch (IF):
+The processor implements the standard 5-stage MIPS pipeline. Each stage is separated by synchronous pipeline registers (`IF/ID`, `ID/EX`, `EX/MEM`, and `MEM/WB`) that capture data and control signals on the rising edge of the clock.
 
-Maintains the Program Counter (PC).
+### 1. Instruction Fetch (IF)
+- Maintains the Program Counter (PC)
+- Fetches 32-bit instructions from Instruction Memory (`imem`)
+- Updates the PC for sequential execution or branching
 
-Fetches the 32-bit machine code instruction from Instruction Memory (imem).
+### 2. Instruction Decode (ID)
+- Decodes instructions using the Control Unit
+- Reads source operands from the Register File
+- Generates control signals
+- Calculates branch targets and evaluates branch conditions
 
-Instruction Decode (ID):
+### 3. Execute (EX)
+- Performs arithmetic and logical operations using the ALU
+- Computes effective addresses for memory instructions
+- Executes comparison operations for branching
 
-Decodes the instruction using the Control Unit.
+### 4. Memory Access (MEM)
+- Reads from or writes to Data Memory (`dmem`)
+- Handles `lw` and `sw` instructions
 
-Reads operand values from the Register File.
+### 5. Write Back (WB)
+- Writes ALU results or memory data back into the Register File
+- Completes the execution of an instruction
 
-Calculates branch targets and evaluates branch conditions early to minimize penalties.
+---
 
-Execute (EX):
+## Hazard Resolution
 
-The Arithmetic Logic Unit (ALU) performs mathematical operations, logical operations, or calculates memory addresses.
+To achieve efficient pipeline execution with minimal stalls, the processor implements dedicated hazard handling hardware.
 
-Memory (MEM):
+### Forwarding Unit
+The forwarding unit detects Read-After-Write (RAW) dependencies and forwards results directly from later pipeline stages to the ALU inputs instead of waiting for register write-back. This significantly reduces unnecessary pipeline stalls.
 
-Interfaces with Data Memory (dmem) for Load Word (lw) and Store Word (sw) instructions.
+### Hazard Detection Unit
+Load-use hazards cannot always be resolved through forwarding. When an instruction depends on data from a preceding `lw` instruction, the hazard detection unit:
+- Stalls the IF and ID stages
+- Inserts a single NOP into the EX stage
+- Resumes execution once the required data becomes available
 
-Write-Back (WB):
+### Branch Handling
+When a branch is taken, instructions already fetched after the branch become invalid. The processor flushes the `IF/ID` pipeline register by replacing the incorrect instruction with a NOP (`32'b0`), ensuring correct program execution.
 
-Commits the final ALU result or Memory read data back to the Register File.
+---
 
-⚡ Advanced Hazard Resolution
+## Simulation
 
-To maintain a Cycles Per Instruction (CPI) close to 1.0, this processor implements robust hardware interlocks:
+### Prerequisites
 
-Data Hazard Mitigation (Forwarding Unit):
-Detects RAW dependencies where an instruction needs an operand that is still in the EX or MEM stage. It bypasses the register file and forwards the data directly to the ALU inputs (forward_a, forward_b), preventing unnecessary pipeline stalls.
+- Icarus Verilog (`iverilog`)
+- GTKWave
 
-Load-Use Hazard Mitigation (Stall Logic):
-If an instruction requires data from a preceding lw instruction that hasn't reached the WB stage, the Hazard Unit dynamically stalls the IF and ID stages and injects a single pipeline bubble (NOP) into the EX stage.
+### Steps
 
-Control Hazard Mitigation (Branch Flushing):
-When a branch is taken, the instructions fetched in the "branch delay slots" are invalid. The hardware actively flushes the IF/ID pipeline register (forcing it to 32'b0 / NOP), effectively clearing the undefined or incorrect states before jumping to the new target address.
+#### 1. Initialize Instruction Memory
 
-🚀 How to Run the Simulation
+Place the 32-bit hexadecimal machine code instructions in:
 
-Prerequisites
+```text
+imem_init.mem
+```
 
-Icarus Verilog (iverilog): For compiling the Verilog code.
+#### 2. Compile
 
-GTKWave: For viewing the .vcd waveform output.
-
-Execution Steps
-
-Write Assembly / Machine Code:
-Place your 32-bit hexadecimal machine code instructions into the imem_init.mem file.
-
-Compile the Design:
-
+```bash
 iverilog -o cpu_sim *.v
+```
 
+#### 3. Run the Simulation
 
-Run the Simulation:
-
+```bash
 vvp cpu_sim
+```
 
+After execution, the testbench prints a performance report including:
+- Register File contents
+- Data Memory contents
+- Total clock cycles
+- Cycles Per Instruction (CPI)
 
-Note: Upon successful execution, the testbench will output a "Core Simulation and Performance Audit Report" directly in the terminal, displaying the final Register states, RAM states, and calculated CPI.
+#### 4. View Waveforms
 
-View Waveforms:
-
+```bash
 gtkwave mips_pipeline.vcd
+```
 
+---
 
-📊 Waveform Analysis & Verification
+## Waveform Verification
 
-When analyzing the GTKWave output, you can verify the pipeline's functional correctness by observing the "Waterfall Effect":
+The generated waveform can be used to verify the correct operation of the pipeline.
 
-Synchronous Flow: Instructions (instr_if) can be seen cascading down into the Decode stage (instr_id) exactly one clock cycle later.
+### Pipeline Progression
+Instructions move through the five pipeline stages one clock cycle at a time, demonstrating proper pipeline flow.
 
-Flawless Branching: When pc_current jumps to a new address due to a branch, you will observe the pipeline actively flushing. The intermediate registers are zeroed out (NOPs), ensuring no garbage data or X (undefined) states poison the ALU.
+### Branch Verification
+When a branch is taken:
+- The Program Counter updates to the target address.
+- Invalid instructions are flushed.
+- Pipeline registers receive NOPs, preventing incorrect execution.
 
-Write-Back Commit: You can trace the initial reg_write control signal generated in the ID stage delaying by exactly 3 clock cycles to become reg_write_wb, successfully retiring the instruction lifecycle.
+### Write-Back Verification
+The `reg_write` control signal generated during instruction decode propagates through the pipeline and reaches the write-back stage after the expected pipeline latency, confirming correct instruction completion.
+
+---
+
+## Features
+
+- 32-bit MIPS Processor
+- 5-stage pipelined architecture
+- Modular RTL Verilog implementation
+- Forwarding Unit for RAW hazard resolution
+- Hazard Detection Unit with automatic pipeline stalling
+- Branch flushing for control hazard handling
+- Separate Instruction and Data Memory
+- Register File with synchronous write-back
+- GTKWave-compatible waveform generation
+- Simulation support using Icarus Verilog
